@@ -35,11 +35,15 @@ tokens = {
     'MUL': r'[*]',
     'DIV': r'[/]',
     'ASSIGN': r'[=]',
-    'EQUAL': r'[=][=]',
+    'EQUAL': r'[is]',
     'EOL': r'[;]',
+    'WHILE': r'[while]',
+    'IF': r'[if]',
+    'ELSE': r'[else]',
+    'LESSER': r'[<]',
+    'GREATER': r'[>]',
     'VAR': r'[a-zA-Z_][a-zA-Z0-9_]*',
-    'INT': r'[0-9_]',
-    
+    'INT': r'[0-9_]',  
 }
 
 # -------------------------------------------
@@ -110,7 +114,7 @@ class Node():
         self.Rchild = Rchild
 
     def __repr__(self):
-        return self.__str__()
+        return self.parent
     
     def __str__(self):
         return (self.parent.token.type + "Operator("+ self.Lchild.__str__() + "," + self.parent.__str__() + "," + self.Rchild.__str__() + ")")
@@ -121,12 +125,12 @@ def parseLine( tokens : List[Token]) -> Node:
     if len(tokens) > 3: 
         Lchild, parent, *tail = tokens
         if re.match(r'[ASSIGN]', parent.type) != None: 
-            return Node(Operator(parent), Number(Lchild), parseOperators(tail))
+            return Node(Operator(parent), Lchild, parseOperators(tail))
         else:
             return []
     elif len(tokens) == 3: 
         Lchild, parent, Rchild = tokens
-        return Node(Operator(parent), Number(Lchild), Number(Rchild))
+        return Node(Operator(parent), Lchild, Rchild)
     else: 
         return []
 
@@ -139,7 +143,7 @@ def parseOperators(tokens : List[Token]) -> Node:
     Lchild, parent, *tail = tokens
     if re.match(r'[/^(MUL|DIV)$/]', parent.type) != None: 
         Rchild, *tail = tail
-        tail.insert( 0,Node(Operator(parent), Lchild, Number(Rchild)))
+        tail.insert( 0,Node(Operator(parent), Lchild, Rchild))
         return parseOperators(tail)
     elif re.match(r'[/^(ADD|SUB)$/]', parent.type) != None:
         Rchild, *tail = tail
@@ -154,10 +158,10 @@ def parseOperators(tokens : List[Token]) -> Node:
 def lookAhead(tokens : List[Token], currentTail : List[Token]) -> Node: 
     Lchild, parent, Rchild, parent2, Rchild2, *tail = tokens
     if re.match(r'[/^(MUL|DIV)$/]', parent2.type) != None: 
-        tail.insert(0, Node(Operator(parent), Lchild, Node(Operator(parent2), Number(Rchild), Number(Rchild2))))
+        tail.insert(0, Node(Operator(parent), Lchild, Node(Operator(parent2), Rchild, Rchild2)))
         return tail
     else: 
-        currentTail.insert(0, Node(Operator(parent), Number(Lchild), Number(Rchild)))
+        currentTail.insert(0, Node(Operator(parent), Lchild, Rchild))
         return currentTail
 
 # Create a List of Node from each line in txt file
@@ -173,26 +177,77 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
     else:
         return [parseLine(Queue)] + parser(tail, [])
 
-
-
-
-
-
 # -------------------------------------------
 # Run
 # -------------------------------------------
+
+def AddOperator( a: int, b: int) -> int: 
+    return (int(a) + int(b))
+
+def SubOperator( a: int, b: int) -> int: 
+    return (int(a) - int(b))
+
+def MulOperator( a: int, b: int) -> int: 
+    return (int(a) * int(b))
+
+def DivOperator( a: int, b: int) -> int: 
+    return (int(a) / int(b))
+
+def AssignOperator( a: int, b: int, vars: dict) -> int: 
+    vars[a] = b
+    return vars
+
+def LesserThenOperator( a: int, b: int) -> bool: 
+    return True if int(a) < int(b) else False 
+
+def GreaterThenOperator( a: int, b: int) -> bool: 
+    return True if int(a) > int(b) else False
+
+def run(nodes: List[Node], vars: dict = {}):
+    if len(nodes) == 0: 
+        return vars
+    head, *tail = nodes
+    return run(tail, procesNodes(head, vars))
+
+def procesNodes(node: Node, vars: dict): 
+    if vars is None: 
+        vars = {}
+    if node.__class__ is Node:
+        operator = node.parent.token.value
+        if operator is '=': 
+            return AssignOperator(node.Lchild.value, procesNodes(node.Rchild, vars), vars)
+        elif operator is '*': 
+            return MulOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+        elif operator is '/': 
+            return DivOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+        elif operator is '+': 
+            return AddOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+        elif operator is '-': 
+            return SubOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+        else: 
+            return 0
+    else:
+        if node.type is "VAR": 
+            return vars.get(node.value)
+        else:
+            return node.value
+    
+
+    
 
 # -------------------------------------------
 # Debug / test functions
 # -------------------------------------------
 
 # Print list with tokens
-print(lexer(fileToStrings('File.txt')))
+#print(lexer(fileToStrings('File.txt')))
 
 #print str of each token
-for i in lexer(fileToStrings('File.txt')): 
-    print(i)
+#for i in lexer(fileToStrings('File.txt')): 
+#    print(i)
 
-for x in parser(lexer(fileToStrings('File.txt'))):
-    print(x)
+#for x in parser(lexer(fileToStrings('File.txt'))):
+#    print("PARSER: ",x)
+
+print(run(parser(lexer(fileToStrings('File.txt')))))
 
