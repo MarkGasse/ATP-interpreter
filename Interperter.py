@@ -35,10 +35,12 @@ tokens = {
     'MUL': r'[*]',
     'DIV': r'[/]',
     'ASSIGN': r'[=]',
-    'EQUAL': r'[is]',
+    'EQUAL': r'[i][s]',
     'EOL': r'[;]',
-    'WHILE': r'[while]',
-    'IF': r'[if]',
+    'EOC': r'[:]',
+    'WHILE': r'[w][h][i][l][e]',
+    'IF': r'[i][f]',
+    'ENDIF': r'[e][n][d][i][f]',
     'ELSE': r'[else]',
     'LESSER': r'[<]',
     'GREATER': r'[>]',
@@ -122,15 +124,16 @@ class Node():
 # Create AST of current line
 # parseLine :: List[Token] -> Node
 def parseLine( tokens : List[Token]) -> Node:
-    if len(tokens) > 3: 
+    if len(tokens) >= 3: 
         Lchild, parent, *tail = tokens
         if re.match(r'[ASSIGN]', parent.type) != None: 
-            return Node(Operator(parent), Lchild, parseOperators(tail))
+            if len(tokens) == 3: 
+                Rchild, *tail = tail
+                return Node(Operator(parent), Lchild, Rchild)
+            else:
+                return Node(Operator(parent), Lchild, parseOperators(tail))
         else:
             return []
-    elif len(tokens) == 3: 
-        Lchild, parent, Rchild = tokens
-        return Node(Operator(parent), Lchild, Rchild)
     else: 
         return []
 
@@ -152,6 +155,8 @@ def parseOperators(tokens : List[Token]) -> Node:
         else: 
             tail.insert(0, Node(Operator(parent), Lchild, Rchild))
             return parseOperators(tail)
+    elif re.match(r'[/^(LESSER|GREATER|EQUAL)$/]', parent.type) != None:
+        return Node(Operator(parent), Lchild, parseOperators(tail))
 
 # Check if next operator has higher priority (if it should be executed first)
 # lookAhead List[Token], List[Token] -> Node
@@ -171,11 +176,37 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
         return []
 
     head, *tail = tokens
-    if head.type != "EOL": 
+    if head.type is "IF": 
+        statement = parseStatement(tail)
+        statementsInCondition, statementsOutCondition = linesIn(statement[1])
+        return [Node(Operator(head), parser(statementsInCondition, []), statement[0])] + parser(statementsOutCondition, [])
+    elif head.type == "EOL": 
+        if len(Queue) < 2: 
+            return []
+        else:
+            return [parseLine(Queue)] + parser(tail, [])
+    else:
         Queue.append(head)
         return parser(tail, Queue)
-    else:
-        return [parseLine(Queue)] + parser(tail, [])
+        
+
+def linesIn(tokens: List[Token], Queue: List[Token] = []): 
+    if len(tokens) is 0: 
+        return(Queue, tokens)
+    head, *tail = tokens
+    if head.type is "ENDIF": 
+        return(Queue, tail)
+    else: 
+        Queue.append(head)
+        return linesIn(tail, Queue)
+
+def parseStatement(tokens: List[Token], Queue: List[Token] = []): 
+    head, *tail = tokens 
+    if head.type is "EOC": 
+        return (parseOperators(Queue), tail)
+    else: 
+        Queue.append(head)
+        return parseStatement(tail, Queue)
 
 # -------------------------------------------
 # Run
@@ -203,15 +234,19 @@ def LesserThenOperator( a: int, b: int) -> bool:
 def GreaterThenOperator( a: int, b: int) -> bool: 
     return True if int(a) > int(b) else False
 
+def IsEqualOperator(a: int, b: int) -> bool: 
+    return True if int(a) == int(b) else False
+
 def run(nodes: List[Node], vars: dict = {}):
+    if vars is None: 
+        vars = {}
+
     if len(nodes) == 0: 
         return vars
     head, *tail = nodes
     return run(tail, procesNodes(head, vars))
 
 def procesNodes(node: Node, vars: dict): 
-    if vars is None: 
-        vars = {}
     if node.__class__ is Node:
         operator = node.parent.token.value
         if operator is '=': 
@@ -224,6 +259,16 @@ def procesNodes(node: Node, vars: dict):
             return AddOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
         elif operator is '-': 
             return SubOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+        elif re.match(r'[/^(if)$/]', operator) != None:
+            if procesNodes(node.Rchild, vars): 
+                return run(node.Lchild, vars)
+            return(vars)
+        elif re.match(r'[/^(is)$/]', operator) != None:
+            return IsEqualOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+        elif re.match(r'[/^(<)$/]', operator) != None:
+            return LesserThenOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+        elif re.match(r'[/^(>)$/]', operator) != None:
+            return GreaterThenOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
         else: 
             return 0
     else:
@@ -246,8 +291,10 @@ def procesNodes(node: Node, vars: dict):
 #for i in lexer(fileToStrings('File.txt')): 
 #    print(i)
 
+#parser
 #for x in parser(lexer(fileToStrings('File.txt'))):
-#    print("PARSER: ",x)
+ #   print("PARSER: ",x)
 
+#run
 print(run(parser(lexer(fileToStrings('File.txt')))))
 
