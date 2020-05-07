@@ -1,5 +1,6 @@
 import re
 from typing import List, Tuple, Union
+from functools import reduce
 
 # -------------------------------------------
 # Read file
@@ -30,22 +31,21 @@ class Token():
 # Token types
 # -------------------------------------------
 tokens = {
-    'ADD': r'[+]',
-    'SUB': r'[-]',
-    'MUL': r'[*]',
-    'DIV': r'[/]',
-    'ASSIGN': r'[=]',
-    'EQUAL': r'[m][a]',
-    'NOTEQUAL': r'[n][o][t]',
-    'EOL': r'[;]',
-    'EOC': r'[:]',
-    'WHILE': r'[w][h][i][l][e]',
-    'ENDWHILE': r'[e][n][d][w][h][i][l][e]',
-    'IF': r'[i][f]',
-    'ENDIF': r'[e][n][d][i][f]',
-    'ELSE': r'[else]',
-    'LESSER': r'[<]',
-    'GREATER': r'[>]',
+    'ADD': r'(adde)',
+    'SUB': r'(minuas)',
+    'MUL': r'(pullulate)',
+    'DIV': r'(divisa)',
+    'ASSIGN': r'(assignato)',
+    'EQUAL': r'(par)',
+    'NOTEQUAL': r'(dispar)',
+    'EOL': r'(semicolon)',
+    'EOC': r'(tum)',
+    'WHILE': r'(dum)',
+    'ENDWHILE': r'(finisdum)',
+    'IF': r'(si)',
+    'ENDIF': r'(finissi)',
+    'LESSER': r'(minor)',
+    'GREATER': r'(major)',
     'VAR': r'[a-zA-Z_][a-zA-Z0-9_]*',
     'INT': r'[0-9_]',  
 }
@@ -64,12 +64,8 @@ def checkToken(token : str, string : str) -> bool:
 
 # 
 # matchToken :: str, str -> Union[Token, None]
-def matchToken(string : str, tokens : str) -> Union[Token,None]:
-    if len(tokens) == 0:
-        return None
-    else:
-        head, *tail = tokens
-        return Token(head[0], string) if checkToken(head, string) else matchToken(string, tail) 
+def matchToken(string : str, tokens : str) -> Token:
+    return Token(next(filter(lambda currentToken: checkToken(currentToken, string), tokens), None)[0], string)
 
 #
 # lexer :: str, str -> [Union[Token,None]]
@@ -178,9 +174,9 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
         return []
 
     head, *tail = tokens
-    if head.type is "IF" or head.type is "WHILE": 
+    if head.type is "IF" or head.type is "WHILE":
         statement = parseStatement(tail, [])
-        statementsInCondition, statementsOutCondition = linesIn(head.type, statement[1], [])
+        statementsInCondition, statementsOutCondition = linesInCondition(head.type, statement[1], [])
         return [Node(Operator(head), parser(statementsInCondition, []), statement[0])] + parser(statementsOutCondition, [])
     elif head.type == "EOL": 
         if len(Queue) < 2: 
@@ -192,7 +188,7 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
         return parser(tail, Queue)
         
 
-def linesIn(state: str, tokens: List[Token], Queue: List[Token] = []): 
+def linesInCondition(state: str, tokens: List[Token], Queue: List[Token] = []): 
     if len(tokens) is 0: 
         return(Queue, tokens)
     head, *tail = tokens
@@ -202,7 +198,7 @@ def linesIn(state: str, tokens: List[Token], Queue: List[Token] = []):
         return(Queue, tail)
     else: 
         Queue.append(head)
-        return linesIn(state, tail, Queue)
+        return linesInCondition(state, tail, Queue)
 
 def parseStatement(tokens: List[Token], Queue: List[Token] = []): 
     head, *tail = tokens 
@@ -247,7 +243,6 @@ def IsNotEqualOperator(a: int, b: int) -> bool:
 def run(nodes: List[Node], vars: dict = {}):
     if vars is None: 
         vars = {}
-
     if len(nodes) == 0: 
         return vars
     head, *tail = nodes
@@ -255,36 +250,33 @@ def run(nodes: List[Node], vars: dict = {}):
 
 def procesNodes(node: Node, vars: dict): 
     if node.__class__ is Node:
-        operator = node.parent.token.value
-        if operator is '=': 
+        operator = node.parent.token.type
+        if operator is 'ASSIGN': 
             return AssignOperator(node.Lchild.value, procesNodes(node.Rchild, vars), vars)
-        elif operator is '*': 
+        elif operator is 'MUL': 
             return MulOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
-        elif operator is '/': 
+        elif operator is 'DIV': 
             return DivOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
-        elif operator is '+': 
+        elif operator is 'ADD': 
             return AddOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
-        elif operator is '-': 
+        elif operator is 'SUB': 
             return SubOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
-        elif re.match(r'[/^(if)$/]', operator) != None:
+        elif operator is 'IF': 
             if procesNodes(node.Rchild, vars): 
                return run(node.Lchild, vars)
             return(vars)
-        elif re.match(r'[/^(while)$/]', operator) != None:
+        elif operator is 'WHILE': 
             if procesNodes(node.Rchild, vars): 
-                #run(node.Lchild, vars)
                 return procesNodes(node, run(node.Lchild, vars))
             return(vars)
-        elif re.match(r'[/^(not)$/]', operator) != None:
+        elif operator is 'NOTEQUAL': 
             return IsNotEqualOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))  
-        elif re.match(r'[/^(ma)$/]', operator) != None:
+        elif operator is 'EQUAL': 
             return IsEqualOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
-        elif re.match(r'[/^(<)$/]', operator) != None:
+        elif operator is 'LESSER': 
             return LesserThenOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
-        elif re.match(r'[/^(>)$/]', operator) != None:
+        elif operator is 'GREATER': 
             return GreaterThenOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
-        else: 
-            return 0
     else:
         if node.type is "VAR": 
             return vars.get(node.value)
@@ -310,5 +302,5 @@ def procesNodes(node: Node, vars: dict):
  #   print("PARSER: ",x)
 
 #run
-print(run(parser(lexer(fileToStrings('File.txt')))))
-
+x = run(parser(lexer(fileToStrings('File.txt'))))
+print(x)
