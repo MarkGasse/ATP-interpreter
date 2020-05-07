@@ -179,9 +179,8 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
 
     head, *tail = tokens
     if head.type is "IF" or head.type is "WHILE": 
-        statement = parseStatement(tail)
+        statement = parseStatement(tail, [])
         statementsInCondition, statementsOutCondition = linesIn(head.type, statement[1], [])
-        print(statementsInCondition)
         return [Node(Operator(head), parser(statementsInCondition, []), statement[0])] + parser(statementsOutCondition, [])
     elif head.type == "EOL": 
         if len(Queue) < 2: 
@@ -269,12 +268,12 @@ def procesNodes(node: Node, vars: dict):
             return SubOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
         elif re.match(r'[/^(if)$/]', operator) != None:
             if procesNodes(node.Rchild, vars): 
-                return run(node.Lchild, vars)
+               return run(node.Lchild, vars)
             return(vars)
         elif re.match(r'[/^(while)$/]', operator) != None:
             if procesNodes(node.Rchild, vars): 
-                run(node.Lchild, vars)
-                procesNodes(node, vars)
+                #run(node.Lchild, vars)
+                return procesNodes(node, run(node.Lchild, vars))
             return(vars)
         elif re.match(r'[/^(not)$/]', operator) != None:
             return IsNotEqualOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))  

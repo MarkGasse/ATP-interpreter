@@ -1,7 +1,12 @@
-x = 10;
-while x < 20:
-x = x +1;
-if 5 not 4:
+x = 0 ;
+m = 5;
 y = 2;
-endif
+while x < 10:
+    x = x + 1;
+    while m not 20:
+        m = m + 1;
+        if m > 18: 
+            y = y * 2;
+        endif
+    endwhile
 endwhile
