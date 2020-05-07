@@ -35,10 +35,12 @@ tokens = {
     'MUL': r'[*]',
     'DIV': r'[/]',
     'ASSIGN': r'[=]',
-    'EQUAL': r'[i][s]',
+    'EQUAL': r'[m][a]',
+    'NOTEQUAL': r'[n][o][t]',
     'EOL': r'[;]',
     'EOC': r'[:]',
     'WHILE': r'[w][h][i][l][e]',
+    'ENDWHILE': r'[e][n][d][w][h][i][l][e]',
     'IF': r'[i][f]',
     'ENDIF': r'[e][n][d][i][f]',
     'ELSE': r'[else]',
@@ -155,7 +157,7 @@ def parseOperators(tokens : List[Token]) -> Node:
         else: 
             tail.insert(0, Node(Operator(parent), Lchild, Rchild))
             return parseOperators(tail)
-    elif re.match(r'[/^(LESSER|GREATER|EQUAL)$/]', parent.type) != None:
+    elif re.match(r'[/^(LESSER|GREATER|NOTEQUAL|EQUAL)$/]', parent.type) != None:
         return Node(Operator(parent), Lchild, parseOperators(tail))
 
 # Check if next operator has higher priority (if it should be executed first)
@@ -176,9 +178,10 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
         return []
 
     head, *tail = tokens
-    if head.type is "IF": 
+    if head.type is "IF" or head.type is "WHILE": 
         statement = parseStatement(tail)
-        statementsInCondition, statementsOutCondition = linesIn(statement[1])
+        statementsInCondition, statementsOutCondition = linesIn(head.type, statement[1], [])
+        print(statementsInCondition)
         return [Node(Operator(head), parser(statementsInCondition, []), statement[0])] + parser(statementsOutCondition, [])
     elif head.type == "EOL": 
         if len(Queue) < 2: 
@@ -190,15 +193,17 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
         return parser(tail, Queue)
         
 
-def linesIn(tokens: List[Token], Queue: List[Token] = []): 
+def linesIn(state: str, tokens: List[Token], Queue: List[Token] = []): 
     if len(tokens) is 0: 
         return(Queue, tokens)
     head, *tail = tokens
-    if head.type is "ENDIF": 
+    if head.type is "ENDIF" and state is "IF": 
+        return(Queue, tail)
+    if head.type is "ENDWHILE" and state is "WHILE": 
         return(Queue, tail)
     else: 
         Queue.append(head)
-        return linesIn(tail, Queue)
+        return linesIn(state, tail, Queue)
 
 def parseStatement(tokens: List[Token], Queue: List[Token] = []): 
     head, *tail = tokens 
@@ -237,6 +242,9 @@ def GreaterThenOperator( a: int, b: int) -> bool:
 def IsEqualOperator(a: int, b: int) -> bool: 
     return True if int(a) == int(b) else False
 
+def IsNotEqualOperator(a: int, b: int) -> bool: 
+    return True if int(a) != int(b) else False
+
 def run(nodes: List[Node], vars: dict = {}):
     if vars is None: 
         vars = {}
@@ -263,7 +271,14 @@ def procesNodes(node: Node, vars: dict):
             if procesNodes(node.Rchild, vars): 
                 return run(node.Lchild, vars)
             return(vars)
-        elif re.match(r'[/^(is)$/]', operator) != None:
+        elif re.match(r'[/^(while)$/]', operator) != None:
+            if procesNodes(node.Rchild, vars): 
+                run(node.Lchild, vars)
+                procesNodes(node, vars)
+            return(vars)
+        elif re.match(r'[/^(not)$/]', operator) != None:
+            return IsNotEqualOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))  
+        elif re.match(r'[/^(ma)$/]', operator) != None:
             return IsEqualOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
         elif re.match(r'[/^(<)$/]', operator) != None:
             return LesserThenOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))

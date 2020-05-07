@@ -1,7 +1,7 @@
-y = 4;
-m = 3;
-if 24 < 33:
+x = 10;
+while x < 20:
+x = x +1;
+if 5 not 4:
 y = 2;
-m = y + m;
 endif
-x = 2;
+endwhile
