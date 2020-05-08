@@ -13,19 +13,16 @@ def fileToStrings(fileName):
 # Token class
 # -------------------------------------------
 class Token():
-    def __init__(self, type, value):
+    def __init__(self, type, value, lineNumber):
         self.type = type
         self.value = value
-        # ADD line number
+        self.lineNumber = lineNumber
 
     def __repr__(self):
         return self.type
     
     def __str__(self):
-        if self.value != '\n':
-            return ("| TOKEN | type: " + self.type + " | value: " + self.value + " |")
-        else: 
-            return ("| TOKEN | type: " + self.type + " |")
+            return ("Line: "+ str(self.lineNumber) +"| TOKEN | type: " + self.type + " | value: " + self.value + " |")
 
 # -------------------------------------------
 # Token types
@@ -62,30 +59,42 @@ def checkToken(token : str, string : str) -> bool:
     else:
         return True
 
+class Line(): 
+    def __init__(self, lineNumber=0):
+        self.lineNumber = lineNumber
+
+def my_decorator(fn):
+    
+    return fn
 # 
-# matchToken :: str, str -> Union[Token, None]
-def matchToken(string : str, tokens : str) -> Token:
-    return Token(next(filter(lambda currentToken: checkToken(currentToken, string), tokens), None)[0], string)
+# matchToken :: str, str -> Token, None
+def matchToken(string : str, tokens : str, lineNumber: int) -> Token:
+    return Token(next(filter(lambda currentToken: checkToken(currentToken, string), tokens))[0], string, lineNumber)
 
 #
 # lexer :: str, str -> [Union[Token,None]]
-def lexer(line : str, pattern : str = '') -> List[Union[Token,None]]:
+def lexer(line : str, lineNumber: int=0, pattern : str = '') -> List[Token]:
     
     if len(line) == 0:
         return []
 
     head, *tail = line
+
+    #if head is '\n': 
+    #    lineNumber += 1
+    #    return lexer(tail, lineNumber , pattern)
+
     if str.isdigit(head) or str.isalpha(head):
-        return lexer(tail, pattern + head)
+        return lexer(tail,lineNumber, pattern + head)
     elif str.isspace(head) and pattern != '':
-        return [matchToken(pattern,tokens.items())] + lexer(tail, '')
+        return [matchToken(pattern,tokens.items(),lineNumber)] + lexer(tail,lineNumber, '')
     elif not str.isspace(head): 
         if pattern != '':
-            return [matchToken(pattern,tokens.items())] + [matchToken(head,tokens.items())] + lexer(tail, '')
+            return [matchToken(pattern,tokens.items(),lineNumber)] + [matchToken(head,tokens.items(),lineNumber)] + lexer(tail,lineNumber, '')
         else:
-            return [matchToken(head,tokens.items())] + lexer(tail, '')
+            return [matchToken(head,tokens.items(),lineNumber)] + lexer(tail,lineNumber, '')
     else: 
-        return lexer(tail, '')
+        return lexer(tail,lineNumber, '')
 
 # -------------------------------------------
 # Parser
@@ -114,10 +123,10 @@ class Node():
         self.Rchild = Rchild
 
     def __repr__(self):
-        return self.parent
+        return self.__str__()
     
     def __str__(self):
-        return (self.parent.token.type + "Operator("+ self.Lchild.__str__() + "," + self.parent.__str__() + "," + self.Rchild.__str__() + ")")
+        return (str(self.parent.token.type) + "Operator("+ self.Lchild.__str__() + "," + self.parent.__str__() + "," + self.Rchild.__str__() + ")")
 
 # Create AST of current line
 # parseLine :: List[Token] -> Node
@@ -176,7 +185,9 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
     head, *tail = tokens
     if head.type is "IF" or head.type is "WHILE":
         statement = parseStatement(tail, [])
-        statementsInCondition, statementsOutCondition = linesInCondition(head.type, statement[1], [])
+        statementsInCondition, statementsOutCondition = linesInCondition(head.type, statement[1], 0, [])
+        print("IN", statementsInCondition)
+        print("OUT: ", statementsOutCondition)
         return [Node(Operator(head), parser(statementsInCondition, []), statement[0])] + parser(statementsOutCondition, [])
     elif head.type == "EOL": 
         if len(Queue) < 2: 
@@ -188,17 +199,21 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
         return parser(tail, Queue)
         
 
-def linesInCondition(state: str, tokens: List[Token], Queue: List[Token] = []): 
+def linesInCondition(state: str,  tokens: List[Token],nested: int=0, Queue: List[Token] = []): 
     if len(tokens) is 0: 
         return(Queue, tokens)
     head, *tail = tokens
-    if head.type is "ENDIF" and state is "IF": 
+    if head.type is "ENDIF" and state is "IF" and nested is 0: 
         return(Queue, tail)
-    if head.type is "ENDWHILE" and state is "WHILE": 
+    if head.type is "ENDWHILE" and state is "WHILE" and nested is 0: 
         return(Queue, tail)
     else: 
+        if (state is "IF" and head.type is "IF") or (state is "WHILE" and head.type is "WHILE"): 
+            nested += 1
+        elif (state is "IF" and head.type is "ENDIF") or (state is "WHILE" and head.type is "ENDWHILE"):
+            nested -= 1
         Queue.append(head)
-        return linesInCondition(state, tail, Queue)
+        return linesInCondition(state, tail,nested, Queue)
 
 def parseStatement(tokens: List[Token], Queue: List[Token] = []): 
     head, *tail = tokens 
@@ -252,7 +267,9 @@ def procesNodes(node: Node, vars: dict):
     if node.__class__ is Node:
         operator = node.parent.token.type
         if operator is 'ASSIGN': 
-            return AssignOperator(node.Lchild.value, procesNodes(node.Rchild, vars), vars)
+            tmp = AssignOperator(node.Lchild.value, procesNodes(node.Rchild, vars), vars)
+            showCurrentVariables(tmp, node.parent.token.lineNumber)
+            return tmp
         elif operator is 'MUL': 
             return MulOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
         elif operator is 'DIV': 
@@ -283,8 +300,14 @@ def procesNodes(node: Node, vars: dict):
         else:
             return node.value
     
+def showCurrentVariables(variables: dict, currentLine: str):
+    VariablesList = list(map(lambda x: "variable: " + str(x) + " = " +str(variables[x]), variables))
+    VariablesList.insert(0, ("Current line number: " + str(currentLine)))
+    VariablesList. append("\n")
+    return list(map(lambda x: show(x), VariablesList))
 
-    
+def show(string: str): 
+    print(string)
 
 # -------------------------------------------
 # Debug / test functions
@@ -299,8 +322,9 @@ def procesNodes(node: Node, vars: dict):
 
 #parser
 #for x in parser(lexer(fileToStrings('File.txt'))):
- #   print("PARSER: ",x)
+#    print("PARSER: ",x)
 
 #run
 x = run(parser(lexer(fileToStrings('File.txt'))))
+
 print(x)
