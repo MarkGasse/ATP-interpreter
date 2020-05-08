@@ -1,6 +1,5 @@
 import re
 from typing import List, Tuple, Union, Callable
-from functools import reduce
 
 # -------------------------------------------
 # Read file
@@ -136,19 +135,21 @@ class Node():
 
 # Create AST of current line
 # parseLine :: List[Token] -> Node
-def parseLine( tokens : List[Token]) -> Node:
+def parseLine( tokens : List[Token]) -> Union[Node,List[Token]]:
     if len(tokens) >= 3: 
         Lchild, parent, *tail = tokens
-        if re.match(r'[ASSIGN]', parent.type) != None: 
+        # if assign operator: create AST of current line
+        if re.match(r'[ASSIGN]', parent.type) != None:
+            # if 3 tokens create AST of tokens
             if len(tokens) == 3: 
                 Rchild, *tail = tail
                 return Node(Operator(parent), Lchild, Rchild)
+            # if more then 3 tokens: first create AST of tokens in tail
             else:
                 return Node(Operator(parent), Lchild, parseOperators(tail))
-        else:
-            return []
+    # Not enough tokens to create AST: return tokens
     else: 
-        return []
+        return tokens
 
 # Create AST of operators on current line
 # parseOperators :: List[Token] -> Node
@@ -157,17 +158,20 @@ def parseOperators(tokens : List[Token]) -> Node:
         return tokens[0]
 
     Lchild, parent, *tail = tokens
+    # Create Node of operator
     if re.match(r'[/^(MUL|DIV)$/]', parent.type) != None: 
         Rchild, *tail = tail
         tail.insert( 0,Node(Operator(parent), Lchild, Rchild))
         return parseOperators(tail)
     elif re.match(r'[/^(ADD|SUB)$/]', parent.type) != None:
         Rchild, *tail = tail
+        # If their are more operators: check if next has higher priority
         if len(tail) >= 2:
             return parseOperators(lookAhead(tokens, tail))
         else: 
             tail.insert(0, Node(Operator(parent), Lchild, Rchild))
             return parseOperators(tail)
+    # if token is condition: Create Node with Lchild is AST of operators on left side (Rchild vice versa)
     elif re.match(r'[/^(LESSER|GREATER|NOTEQUAL|EQUAL)$/]', parent.type) != None:
         return Node(Operator(parent), Lchild, parseOperators(tail))
 
@@ -175,6 +179,7 @@ def parseOperators(tokens : List[Token]) -> Node:
 # lookAhead List[Token], List[Token] -> Node
 def lookAhead(tokens : List[Token], currentTail : List[Token]) -> Node: 
     Lchild, parent, Rchild, parent2, Rchild2, *tail = tokens
+    # If "True": add next operator node as Right child in current Node
     if re.match(r'[/^(MUL|DIV)$/]', parent2.type) != None: 
         tail.insert(0, Node(Operator(parent), Lchild, Node(Operator(parent2), Rchild, Rchild2)))
         return tail
@@ -190,36 +195,43 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
 
     head, *tail = tokens
     if head.type is "IF" or head.type is "WHILE":
+        # Get AST of condition of statement
         statement = getStatementCondition(tail, [])
-        statementsInCondition, statementsOutCondition = StatementsInStatement(head.type, statement[1], 0, [])
-        return [Node(Operator(head), parser(statementsInCondition, []), statement[0])] + parser(statementsOutCondition, [])
+        # Split Tokens in list of tokens inside the statement and outside the statement
+        tokensInCondition, tokensOutCondition = tokensInStatement(head.type, statement[1], 0, [])
+        # return a AST containing the statement and the "parsed tokens" (statements) inside the statement
+        # And continue to parsing tokens outside statement
+        return [Node(Operator(head), parser(tokensInCondition, []), statement[0])] + parser(tokensOutCondition, [])
+    # if end of line: Create AST of Queue and continue parsing tail
     elif head.type == "EOL": 
-        if len(Queue) < 2: 
-            return []
-        else:
-            return [parseLine(Queue)] + parser(tail, [])
+        return [parseLine(Queue)] + parser(tail, [])
+    # Add token to Queue
     else:
         Queue.append(head)
         return parser(tail, Queue)
 
 # Separate tokens in statement (if or while) from tail 
 # Taking nested statements into account   
-# StatementsInStatement :: str, List[Token], int, List[Token] -> Tuple[List[Token], list[Token]]
-def StatementsInStatement(state: str,  tokens: List[Token],nested: int=0, Queue: List[Token] = []) -> Tuple[List[Token], list[Token]]: 
+# tokensInStatement :: str, List[Token], int, List[Token] -> Tuple[List[Token], list[Token]]
+def tokensInStatement(state: str,  tokens: List[Token],nested: int=0, Queue: List[Token] = []) -> Tuple[List[Token],List[Token]]: 
     if len(tokens) is 0: 
         return(Queue, tokens)
     head, *tail = tokens
+
+    # Check if end of (if or while) statement
     if head.type is "ENDIF" and state is "IF" and nested is 0: 
         return(Queue, tail)
-    if head.type is "ENDWHILE" and state is "WHILE" and nested is 0: 
-        return(Queue, tail)
-    else: 
+    elif head.type is "ENDWHILE" and state is "WHILE" and nested is 0: 
+        return (Queue, tail)
+    else:
+        # If nested (while or if) update nested counter
         if (state is "IF" and head.type is "IF") or (state is "WHILE" and head.type is "WHILE"): 
             nested += 1
         elif (state is "IF" and head.type is "ENDIF") or (state is "WHILE" and head.type is "ENDWHILE"):
             nested -= 1
+        # Add token to Queue
         Queue.append(head)
-        return StatementsInStatement(state, tail,nested, Queue)
+        return tokensInStatement(state, tail,nested, Queue)
 
 # Separate tokens of the condition from (if or while statement) from tail
 # return a tuple of: condition of the statement (AST) and tail with other tokens
@@ -236,7 +248,8 @@ def getStatementCondition(tokens: List[Token], Queue: List[Token] = []) -> Tuple
 # Decorator
 # -------------------------------------------
 
-#
+# This decorator is called every assign operator (in executeStatement function)
+# Prints line number and current variables of code
 # VariableChanges :: Callable[[str, int], dict], str -> Callable[[str, int], dict]
 def VariableChanges(func: Callable[[str, int], dict], lineNumber: str) -> Callable[[str, int], dict]:
     # Print current existing variables
@@ -280,7 +293,9 @@ def IsNotEqualOperator(a: int, b: int) -> bool:
 # Run
 # -------------------------------------------
 
-def run(statements: List[Node], variables: dict ={}) ->dict:
+# Executes all statements in list
+# run :: List[Node], dict -> dict 
+def run(statements: List[Node], variables: dict ={}) -> dict:
     if variables is None: 
         variables = {}
 
@@ -290,6 +305,9 @@ def run(statements: List[Node], variables: dict ={}) ->dict:
     head, *tail = statements
     return run(tail, executeStatement(head, variables))
 
+# Executes statement: variables are stored in the variables dict
+# This can be used for the next statement
+# executeStatement :: Node, dict -> dict
 def executeStatement(statement: Node, variables: dict) -> dict: 
     if statement.__class__ is Node:
         operator = statement.parent.token.type
@@ -329,7 +347,7 @@ def executeStatement(statement: Node, variables: dict) -> dict:
 # Visualization 
 # -------------------------------------------
 
-def showCurrentVariables(variables: dict, currentLine: str):
+def showCurrentVariables(variables: dict, currentLine: str) -> List[print]:
     VariablesList = list(map(lambda x: "variable: " + str(x) + " = " +str(variables[x]), variables))
     VariablesList.insert(0, ("Current line number: " + str(currentLine)))
     VariablesList. append("\n")
@@ -339,19 +357,23 @@ def show(string: str) -> None:
     print(string)
 
 # -------------------------------------------
-# Debug / test functions
+# Call functions
 # -------------------------------------------
 
 # Print list with tokens
-#print(lexer(fileToStrings('File.txt')))
+Lexer = lexer(fileToStrings('File.txt'))
+#print(Lexer)
 
 #print str of each token
-#for i in lexer(fileToStrings('File.txt')): 
+#for i in Lexer: 
 #    print(i)
 
-#parser
-#for x in parser(lexer(fileToStrings('File.txt'))):
-#    print("PARSER: ",x)
+# parser
+Parser = parser(Lexer)
+#print(Parser)
 
-#run
-x = run(parser(lexer(fileToStrings('File.txt'))))
+#for x in Parser:
+#    print(x , "\n")
+
+# run
+x = run(Parser)
