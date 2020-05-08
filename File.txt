@@ -1,9 +1,9 @@
 index assignato 0 semicolon
 counter assignato 5 semicolon
 value assignato 2 semicolon
-x assignato 6 semicolon
-
-dum index minor 10 tum
+x assignato 6 semicolon 
+    
+dum index minor 10 tum 
     index assignato index adde 1 semicolon
     dum counter dispar 20 tum
         counter assignato counter adde 1 semicolon
@@ -12,14 +12,14 @@ dum index minor 10 tum
         finissi
     finisdum
 finisdum 
-
+  
 number assignato 8 semicolon 
-
+    
 si x par 6 tum
 a assignato 6 semicolon 
 si number dispar 10 tum 
 number assignato number pullulate number semicolon
 finissi
 finissi 
-
+     
 z assignato 6 semicolon 

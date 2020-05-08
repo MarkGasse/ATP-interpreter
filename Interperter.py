@@ -59,13 +59,6 @@ def checkToken(token : str, string : str) -> bool:
     else:
         return True
 
-class Line(): 
-    def __init__(self, lineNumber=0):
-        self.lineNumber = lineNumber
-
-def my_decorator(fn):
-    
-    return fn
 # 
 # matchToken :: str, str -> Token, None
 def matchToken(string : str, tokens : str, lineNumber: int) -> Token:
@@ -80,9 +73,8 @@ def lexer(line : str, lineNumber: int=0, pattern : str = '') -> List[Token]:
 
     head, *tail = line
 
-    #if head is '\n': 
-    #    lineNumber += 1
-    #    return lexer(tail, lineNumber , pattern)
+    if head is '\n': 
+        lineNumber += 1
 
     if str.isdigit(head) or str.isalpha(head):
         return lexer(tail,lineNumber, pattern + head)
@@ -186,8 +178,6 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
     if head.type is "IF" or head.type is "WHILE":
         statement = parseStatement(tail, [])
         statementsInCondition, statementsOutCondition = linesInCondition(head.type, statement[1], 0, [])
-        print("IN", statementsInCondition)
-        print("OUT: ", statementsOutCondition)
         return [Node(Operator(head), parser(statementsInCondition, []), statement[0])] + parser(statementsOutCondition, [])
     elif head.type == "EOL": 
         if len(Queue) < 2: 
@@ -222,6 +212,13 @@ def parseStatement(tokens: List[Token], Queue: List[Token] = []):
     else: 
         Queue.append(head)
         return parseStatement(tail, Queue)
+
+# -------------------------------------------
+# Decorator
+# -------------------------------------------
+def VariableChanges(func, lineNumber: str):
+    showCurrentVariables(func, lineNumber)
+    return func
 
 # -------------------------------------------
 # Run
@@ -267,9 +264,7 @@ def procesNodes(node: Node, vars: dict):
     if node.__class__ is Node:
         operator = node.parent.token.type
         if operator is 'ASSIGN': 
-            tmp = AssignOperator(node.Lchild.value, procesNodes(node.Rchild, vars), vars)
-            showCurrentVariables(tmp, node.parent.token.lineNumber)
-            return tmp
+            return VariableChanges(AssignOperator(node.Lchild.value, procesNodes(node.Rchild, vars), vars), node.parent.token.lineNumber)
         elif operator is 'MUL': 
             return MulOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
         elif operator is 'DIV': 
@@ -299,7 +294,11 @@ def procesNodes(node: Node, vars: dict):
             return vars.get(node.value)
         else:
             return node.value
-    
+
+# -------------------------------------------
+# Visualization 
+# -------------------------------------------
+
 def showCurrentVariables(variables: dict, currentLine: str):
     VariablesList = list(map(lambda x: "variable: " + str(x) + " = " +str(variables[x]), variables))
     VariablesList.insert(0, ("Current line number: " + str(currentLine)))
@@ -326,5 +325,3 @@ def show(string: str):
 
 #run
 x = run(parser(lexer(fileToStrings('File.txt'))))
-
-print(x)
