@@ -21,5 +21,5 @@ si number dispar 10 tum
 number assignato number pullulate number semicolon
 finissi
 finissi 
-     
+  
 z assignato 6 semicolon 

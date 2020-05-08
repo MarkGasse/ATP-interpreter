@@ -1,10 +1,12 @@
 import re
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Callable
 from functools import reduce
 
 # -------------------------------------------
 # Read file
 # -------------------------------------------
+
+# Returns str of characters in fileName
 def fileToStrings(fileName):
     with open(fileName, 'r') as file:
         return file.read();
@@ -12,6 +14,9 @@ def fileToStrings(fileName):
 # -------------------------------------------
 # Token class
 # -------------------------------------------
+
+# Token object containing: 
+# type, value of token and line number of location in txt file
 class Token():
     def __init__(self, type, value, lineNumber):
         self.type = type
@@ -27,6 +32,8 @@ class Token():
 # -------------------------------------------
 # Token types
 # -------------------------------------------
+
+# Dict of supported tokens
 tokens = {
     'ADD': r'(adde)',
     'SUB': r'(minuas)',
@@ -59,50 +66,53 @@ def checkToken(token : str, string : str) -> bool:
     else:
         return True
 
-# 
-# matchToken :: str, str -> Token, None
+# Creates a token of string
+# matchToken :: str, str, int -> Token
 def matchToken(string : str, tokens : str, lineNumber: int) -> Token:
     return Token(next(filter(lambda currentToken: checkToken(currentToken, string), tokens))[0], string, lineNumber)
 
-#
-# lexer :: str, str -> [Union[Token,None]]
-def lexer(line : str, lineNumber: int=0, pattern : str = '') -> List[Token]:
-    
-    if len(line) == 0:
+# Creates a list of tokens
+# lexer :: str, str -> [Token]
+def lexer(stringOfChars : str, lineNumber: int=1, Queue : str = '') -> List[Token]:
+    if len(stringOfChars) == 0:
         return []
 
-    head, *tail = line
-
+    head, *tail = stringOfChars
+    # Increase line number if char is "\n"
     if head is '\n': 
         lineNumber += 1
 
+    # Add char to Queue if char is alpha or a digit
     if str.isdigit(head) or str.isalpha(head):
-        return lexer(tail,lineNumber, pattern + head)
-    elif str.isspace(head) and pattern != '':
-        return [matchToken(pattern,tokens.items(),lineNumber)] + lexer(tail,lineNumber, '')
+        return lexer(tail,lineNumber, Queue + head)
+    # If Queue is variable or statement
+    # Create token of current Queue and continue creating tokens out with the tail
+    elif str.isspace(head) and Queue != '':
+        return [matchToken(Queue,tokens.items(),lineNumber)] + lexer(tail,lineNumber, '')
+    # if head is an operator
     elif not str.isspace(head): 
-        if pattern != '':
-            return [matchToken(pattern,tokens.items(),lineNumber)] + [matchToken(head,tokens.items(),lineNumber)] + lexer(tail,lineNumber, '')
+        # if Queue is not empty: create token of Queue and operator (head) and continue with tail
+        # Else create token from operator (head) and continue with tail
+        if Queue != '':
+            return [matchToken(Queue,tokens.items(),lineNumber)] + [matchToken(head,tokens.items(),lineNumber)] + lexer(tail,lineNumber, '')
         else:
             return [matchToken(head,tokens.items(),lineNumber)] + lexer(tail,lineNumber, '')
+    # If none of the above, continue tail and clear Queue (aka ignore empty space)
     else: 
-        return lexer(tail,lineNumber, '')
+       return lexer(tail,lineNumber, '')
 
 # -------------------------------------------
-# Parser
+# Classes
 # -------------------------------------------
 
-class Number():
+class base(): 
     def __init__(self, token):
         self.token = token
 
     def __repr__(self):
         return self.token
 
-    def __str__(self):
-        return ("Number(" + self.token.value + ")")
-
-class Operator(Number): 
+class Operator(base): 
     pass
 
     def __str__(self):
@@ -119,6 +129,10 @@ class Node():
     
     def __str__(self):
         return (str(self.parent.token.type) + "Operator("+ self.Lchild.__str__() + "," + self.parent.__str__() + "," + self.Rchild.__str__() + ")")
+
+# -------------------------------------------
+# Parser
+# -------------------------------------------
 
 # Create AST of current line
 # parseLine :: List[Token] -> Node
@@ -157,7 +171,7 @@ def parseOperators(tokens : List[Token]) -> Node:
     elif re.match(r'[/^(LESSER|GREATER|NOTEQUAL|EQUAL)$/]', parent.type) != None:
         return Node(Operator(parent), Lchild, parseOperators(tail))
 
-# Check if next operator has higher priority (if it should be executed first)
+# Check if next operator has higher priority (if "True", it should be executed first)
 # lookAhead List[Token], List[Token] -> Node
 def lookAhead(tokens : List[Token], currentTail : List[Token]) -> Node: 
     Lchild, parent, Rchild, parent2, Rchild2, *tail = tokens
@@ -168,7 +182,7 @@ def lookAhead(tokens : List[Token], currentTail : List[Token]) -> Node:
         currentTail.insert(0, Node(Operator(parent), Lchild, Rchild))
         return currentTail
 
-# Create a List of Node from each line in txt file
+# Create a List of AST from each line in txt file
 # parser :: List[Token], List[Token] -> List[Node]
 def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]: 
     if len(tokens) == 0: 
@@ -176,8 +190,8 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
 
     head, *tail = tokens
     if head.type is "IF" or head.type is "WHILE":
-        statement = parseStatement(tail, [])
-        statementsInCondition, statementsOutCondition = linesInCondition(head.type, statement[1], 0, [])
+        statement = getStatementCondition(tail, [])
+        statementsInCondition, statementsOutCondition = StatementsInStatement(head.type, statement[1], 0, [])
         return [Node(Operator(head), parser(statementsInCondition, []), statement[0])] + parser(statementsOutCondition, [])
     elif head.type == "EOL": 
         if len(Queue) < 2: 
@@ -187,9 +201,11 @@ def parser(tokens : List[Token], Queue: List[Token] = []) -> List[Node]:
     else:
         Queue.append(head)
         return parser(tail, Queue)
-        
 
-def linesInCondition(state: str,  tokens: List[Token],nested: int=0, Queue: List[Token] = []): 
+# Separate tokens in statement (if or while) from tail 
+# Taking nested statements into account   
+# StatementsInStatement :: str, List[Token], int, List[Token] -> Tuple[List[Token], list[Token]]
+def StatementsInStatement(state: str,  tokens: List[Token],nested: int=0, Queue: List[Token] = []) -> Tuple[List[Token], list[Token]]: 
     if len(tokens) is 0: 
         return(Queue, tokens)
     head, *tail = tokens
@@ -203,25 +219,33 @@ def linesInCondition(state: str,  tokens: List[Token],nested: int=0, Queue: List
         elif (state is "IF" and head.type is "ENDIF") or (state is "WHILE" and head.type is "ENDWHILE"):
             nested -= 1
         Queue.append(head)
-        return linesInCondition(state, tail,nested, Queue)
+        return StatementsInStatement(state, tail,nested, Queue)
 
-def parseStatement(tokens: List[Token], Queue: List[Token] = []): 
+# Separate tokens of the condition from (if or while statement) from tail
+# return a tuple of: condition of the statement (AST) and tail with other tokens
+# getStatementCondition :: List[Token], List[Token] -> Tuple[List[Node],List[Token]]
+def getStatementCondition(tokens: List[Token], Queue: List[Token] = []) -> Tuple[List[Node],List[Token]]: 
     head, *tail = tokens 
     if head.type is "EOC": 
         return (parseOperators(Queue), tail)
     else: 
         Queue.append(head)
-        return parseStatement(tail, Queue)
+        return getStatementCondition(tail, Queue)
 
 # -------------------------------------------
 # Decorator
 # -------------------------------------------
-def VariableChanges(func, lineNumber: str):
+
+#
+# VariableChanges :: Callable[[str, int], dict], str -> Callable[[str, int], dict]
+def VariableChanges(func: Callable[[str, int], dict], lineNumber: str) -> Callable[[str, int], dict]:
+    # Print current existing variables
     showCurrentVariables(func, lineNumber)
+    # return function
     return func
 
 # -------------------------------------------
-# Run
+# Operator functions
 # -------------------------------------------
 
 def AddOperator( a: int, b: int) -> int: 
@@ -252,48 +276,54 @@ def IsEqualOperator(a: int, b: int) -> bool:
 def IsNotEqualOperator(a: int, b: int) -> bool: 
     return True if int(a) != int(b) else False
 
-def run(nodes: List[Node], vars: dict = {}):
-    if vars is None: 
-        vars = {}
-    if len(nodes) == 0: 
-        return vars
-    head, *tail = nodes
-    return run(tail, procesNodes(head, vars))
+# -------------------------------------------
+# Run
+# -------------------------------------------
 
-def procesNodes(node: Node, vars: dict): 
-    if node.__class__ is Node:
-        operator = node.parent.token.type
+def run(statements: List[Node], variables: dict ={}) ->dict:
+    if variables is None: 
+        variables = {}
+
+    if len(statements) == 0: 
+        return variables
+
+    head, *tail = statements
+    return run(tail, executeStatement(head, variables))
+
+def executeStatement(statement: Node, variables: dict) -> dict: 
+    if statement.__class__ is Node:
+        operator = statement.parent.token.type
         if operator is 'ASSIGN': 
-            return VariableChanges(AssignOperator(node.Lchild.value, procesNodes(node.Rchild, vars), vars), node.parent.token.lineNumber)
+            return VariableChanges(AssignOperator(statement.Lchild.value, executeStatement(statement.Rchild, variables), variables), statement.parent.token.lineNumber)
         elif operator is 'MUL': 
-            return MulOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+            return MulOperator(executeStatement(statement.Lchild, variables), executeStatement(statement.Rchild, variables))
         elif operator is 'DIV': 
-            return DivOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+            return DivOperator(executeStatement(statement.Lchild, variables), executeStatement(statement.Rchild, variables))
         elif operator is 'ADD': 
-            return AddOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+            return AddOperator(executeStatement(statement.Lchild, variables), executeStatement(statement.Rchild, variables))
         elif operator is 'SUB': 
-            return SubOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+            return SubOperator(executeStatement(statement.Lchild, variables), executeStatement(statement.Rchild, variables))
         elif operator is 'IF': 
-            if procesNodes(node.Rchild, vars): 
-               return run(node.Lchild, vars)
-            return(vars)
+            if executeStatement(statement.Rchild, variables): 
+               return run(statement.Lchild, variables)
+            return(variables)
         elif operator is 'WHILE': 
-            if procesNodes(node.Rchild, vars): 
-                return procesNodes(node, run(node.Lchild, vars))
-            return(vars)
+            if executeStatement(statement.Rchild, variables): 
+                return executeStatement(statement, run(statement.Lchild, variables))
+            return(variables)
         elif operator is 'NOTEQUAL': 
-            return IsNotEqualOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))  
+            return IsNotEqualOperator(executeStatement(statement.Lchild, variables), executeStatement(statement.Rchild, variables))  
         elif operator is 'EQUAL': 
-            return IsEqualOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+            return IsEqualOperator(executeStatement(statement.Lchild, variables), executeStatement(statement.Rchild, variables))
         elif operator is 'LESSER': 
-            return LesserThenOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+            return LesserThenOperator(executeStatement(statement.Lchild, variables), executeStatement(statement.Rchild, variables))
         elif operator is 'GREATER': 
-            return GreaterThenOperator(procesNodes(node.Lchild, vars), procesNodes(node.Rchild, vars))
+            return GreaterThenOperator(executeStatement(statement.Lchild, variables), executeStatement(statement.Rchild, variables))
     else:
-        if node.type is "VAR": 
-            return vars.get(node.value)
+        if statement.type is "VAR": 
+            return variables.get(statement.value)
         else:
-            return node.value
+            return statement.value
 
 # -------------------------------------------
 # Visualization 
@@ -305,7 +335,7 @@ def showCurrentVariables(variables: dict, currentLine: str):
     VariablesList. append("\n")
     return list(map(lambda x: show(x), VariablesList))
 
-def show(string: str): 
+def show(string: str) -> None: 
     print(string)
 
 # -------------------------------------------
